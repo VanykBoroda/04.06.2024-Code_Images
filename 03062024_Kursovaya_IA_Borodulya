@@ -1,0 +1,172 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import time
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, KFold
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, VotingClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.datasets import cifar10
+from sklearn.decomposition import PCA
+
+start_time = time.time()
+
+# Загрузка данных
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+
+# Преобразование меток из 2D в 1D
+y_train = y_train.flatten()
+y_test = y_test.flatten()
+
+print("Data loaded:", time.time() - start_time)
+
+# Вывод информации о наборе данных
+print("Размер обучающей выборки:", x_train.shape)
+print("Размер тестовой выборки:", x_test.shape)
+print("Количество классов:", len(np.unique(y_train)))
+
+# Визуализация нескольких изображений из набора данных
+fig, axes = plt.subplots(2, 5, figsize=(10, 5))
+for i, ax in enumerate(axes.flat):
+    ax.imshow(x_train[i])
+    ax.set_title(f"Класс: {y_train[i]}")
+plt.tight_layout()
+plt.show()
+plt.close()
+
+print("Visualization done:", time.time() - start_time)
+
+# Преобразование изображений в плоский числовой массив
+x_train_flat = x_train.reshape(x_train.shape[0], -1)
+x_test_flat = x_test.reshape(x_test.shape[0], -1)
+
+# Нормализация данных
+scaler = StandardScaler()
+x_train_flat = scaler.fit_transform(x_train_flat)
+x_test_flat = scaler.transform(x_test_flat)
+
+print("Data normalization done:", time.time() - start_time)
+
+# Проверка наличия пропущенных значений
+print("Пропущенные значения в обучающей выборке:", np.isnan(x_train_flat).sum())
+print("Пропущенные значения в тестовой выборке:", np.isnan(x_test_flat).sum())
+
+# Визуализация распределения классов
+sns.countplot(y_train)
+plt.title("Распределение классов в обучающей выборке")
+plt.show()
+plt.close()
+
+print("Descriptive analysis done:", time.time() - start_time)
+
+# Применение PCA для понижения размерности
+pca = PCA(n_components=0.95)
+x_train_pca = pca.fit_transform(x_train_flat)
+x_test_pca = pca.transform(x_test_flat)
+
+print("PCA done:", time.time() - start_time)
+print("Исходное количество признаков:", x_train_flat.shape[1])
+print("Количество признаков после PCA:", x_train_pca.shape[1])
+
+# Инициализация моделей
+models = {
+    "Logistic Regression": LogisticRegression(max_iter=1000),
+    "K-Nearest Neighbors": KNeighborsClassifier(),
+    "Support Vector Machine": SVC(),
+    "Decision Tree": DecisionTreeClassifier(),
+    "Random Forest": RandomForestClassifier(),
+    "Gradient Boosting": GradientBoostingClassifier(),
+    "AdaBoost": AdaBoostClassifier()
+}
+
+# Обучение и оценка моделей
+results = {}
+for name, model in models.items():
+    model_start_time = time.time()
+    model.fit(x_train_pca, y_train)
+    y_pred = model.predict(x_test_pca)
+    accuracy = accuracy_score(y_test, y_pred)
+    model_end_time = time.time()
+    results[name] = {"accuracy": accuracy, "training_time": model_end_time - model_start_time}
+    print(f"{name}: Accuracy = {accuracy:.4f}, Training Time = {model_end_time - model_start_time:.4f} seconds")
+
+print("Model training done:", time.time() - start_time)
+
+# Ансамблевые модели
+ensemble_models = {
+    "Random Forest": RandomForestClassifier(n_estimators=100),
+    "Gradient Boosting": GradientBoostingClassifier(n_estimators=100),
+    "AdaBoost": AdaBoostClassifier(n_estimators=100),
+    "Voting Classifier": VotingClassifier(estimators=[
+        ('lr', LogisticRegression(max_iter=1000)),
+        ('rf', RandomForestClassifier(n_estimators=100)),
+        ('svc', SVC())
+    ], voting='hard')
+}
+
+# Обучение и оценка ансамблевых моделей
+ensemble_results = {}
+for name, model in ensemble_models.items():
+    model_start_time = time.time()
+    model.fit(x_train_pca, y_train)
+    y_pred = model.predict(x_test_pca)
+    accuracy = accuracy_score(y_test, y_pred)
+    model_end_time = time.time()
+    ensemble_results[name] = {"accuracy": accuracy, "training_time": model_end_time - model_start_time}
+    print(f"{name}: Accuracy = {accuracy:.4f}, Training Time = {model_end_time - model_start_time:.4f} seconds")
+
+print("Ensemble model training done:", time.time() - start_time)
+
+# Настройка гиперпараметров с помощью Grid Search для Random Forest
+param_grid = {
+    'n_estimators': [100, 200],
+    'max_depth': [None, 10, 20],
+    'min_samples_split': [2, 5]
+}
+grid_search = GridSearchCV(RandomForestClassifier(), param_grid, cv=5, scoring='accuracy')
+grid_search_start_time = time.time()
+grid_search.fit(x_train_pca, y_train)
+grid_search_end_time = time.time()
+
+print("Grid search done:", grid_search_end_time - grid_search_start_time)
+print("Лучшие параметры для Random Forest:", grid_search.best_params_)
+print("Лучшая точность для Random Forest:", grid_search.best_score_)
+
+# Обучение модели с лучшими параметрами
+best_rf = grid_search.best_estimator_
+best_rf.fit(x_train_pca, y_train)
+y_pred = best_rf.predict(x_test_pca)
+best_rf_accuracy = accuracy_score(y_test, y_pred)
+print(f"Лучший Random Forest: Accuracy = {best_rf_accuracy:.4f}")
+
+# Таблица с результатами
+results_df = pd.DataFrame(results).T
+ensemble_results_df = pd.DataFrame(ensemble_results).T
+
+print("Результаты базовых моделей:\n", results_df)
+print("Результаты ансамблевых моделей:\n", ensemble_results_df)
+
+# Визуализация результатов базовых моделей
+plt.figure(figsize=(10, 5))
+results_df['accuracy'].plot(kind='bar', color='skyblue')
+plt.xlabel('Models')
+plt.ylabel('Accuracy')
+plt.title('Accuracy of Base Models')
+plt.show()
+plt.close()
+
+# Визуализация результатов ансамблевых моделей
+plt.figure(figsize=(10, 5))
+ensemble_results_df['accuracy'].plot(kind='bar', color='orange')
+plt.xlabel('Models')
+plt.ylabel('Accuracy')
+plt.title('Accuracy of Ensemble Models')
+plt.show()
+plt.close()
+
+print("Visualization of results done:", time.time() - start_time)
